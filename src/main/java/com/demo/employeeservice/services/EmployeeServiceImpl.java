@@ -32,6 +32,9 @@ public class EmployeeServiceImpl implements EmployeeService {
         this.employeeRepository = employeeRepository;
     }
 
+
+    // Perhatikan 2 case dibawah untuk get dan post, ada 2 cara error handling. tapi lebih baik menggunakn error handling yang ada di method post agar tidak rumit dan lebih baik
+
     @Override
     public EmployeeResponseDto getEmployee(Long employeeId) {
         try{
@@ -93,6 +96,8 @@ public class EmployeeServiceImpl implements EmployeeService {
                         .uri("http://localhost:8081/department")
                         .body(Mono.just(departmentRequestDto), DepartmentRequestDto.class)
                         .retrieve()
+                        .onStatus(HttpStatus.BAD_REQUEST::equals, response -> Mono.error(new RuntimeException("Department name already exists")))
+                        .onStatus(HttpStatus.NOT_FOUND::equals, response -> Mono.error(new RuntimeException("Department not found")))
                         .bodyToMono(DepartmentResponseDto.class)
                         .block();
             } else{
@@ -111,21 +116,15 @@ public class EmployeeServiceImpl implements EmployeeService {
                     .employeeName(savedEmployee.getEmployeeName())
                     .department(departmentResponseDto)
                     .build();
-        } catch (WebClientResponseException e){
-            if(e.getStatusCode().is4xxClientError() || e.getStatusCode().is5xxServerError()){
-                String responseBody = e.getResponseBodyAsString();
-                ObjectMapper objectMapper = new ObjectMapper();
-                try {
-                    JsonNode jsonNode = objectMapper.readTree(responseBody);
-                    String errorMessage = jsonNode.get("message").asText();
-                    throw new ResponseStatusException(e.getStatusCode(), errorMessage);
-                } catch (JsonProcessingException ex) {
-                    throw new RuntimeException(ex);
-                }
+        } catch (RuntimeException e){
+            if(e.getMessage().contains("Department name already exists")){
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+            } else if(e.getMessage().contains("Department not found")){
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
             } else {
                 throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage());
             }
-        } catch (BadRequestException e){
+        } catch(BadRequestException e){
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         } catch(Exception e){
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage());
